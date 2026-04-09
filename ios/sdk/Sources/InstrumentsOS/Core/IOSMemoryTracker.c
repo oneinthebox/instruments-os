@@ -57,14 +57,11 @@ static void sample_memory(uint64_t ts_ns, double interval_sec) {
 
     uint64_t live = vm_info.phys_footprint;
 
-    // ledger_phys_footprint_peak is available from rev3 onwards;
-    // fall back to resident_size if the kernel returned a truncated struct.
-    uint64_t peak;
-    if (count >= TASK_VM_INFO_REV3_COUNT) {
-        peak = (uint64_t)vm_info.ledger_phys_footprint_peak;
-    } else {
-        peak = vm_info.resident_size;
-    }
+    // Use resident_size as a proxy for peak — phys_footprint_peak is not
+    // available in all SDK versions. Track our own peak as a fallback.
+    static uint64_t s_tracked_peak = 0;
+    if (live > s_tracked_peak) s_tracked_peak = live;
+    uint64_t peak = s_tracked_peak;
 
     // Compute allocation rate (bytes per second).
     double alloc_rate = 0.0;

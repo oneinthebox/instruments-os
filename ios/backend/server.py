@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import logging
 
@@ -10,6 +11,7 @@ from aiohttp import web
 
 from api import create_app
 from store import TraceStore
+from symbolizer import Symbolizer
 from ws_handler import WSHandler
 
 logging.basicConfig(
@@ -24,9 +26,19 @@ API_HOST = "0.0.0.0"
 API_PORT = 8080
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="InstrumentsOS backend server")
+    parser.add_argument("--dsym", help="Path to .dSYM file for symbolication")
+    parser.add_argument("--binary", help="Path to app binary for symbolication")
+    return parser.parse_args()
+
+
 async def main() -> None:
+    args = parse_args()
+
     store = TraceStore("instrumentsos.db")
-    ws_handler = WSHandler(store)
+    symbolizer = Symbolizer(store, dsym_path=args.dsym, binary_path=args.binary)
+    ws_handler = WSHandler(store, symbolizer=symbolizer)
 
     # Route WebSocket connections: /viewer -> live viewer, default -> SDK handler
     # websockets 13+ no longer passes `path` as a second arg; use websocket.request.path

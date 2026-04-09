@@ -147,10 +147,10 @@ static uint64_t timestamp_ns(void) {
             memset(&event, 0, sizeof(event));
             event.type         = IOS_EVENT_HITCH;
             event.timestamp_ns = timestamp_ns();
-            event.hitch.duration_ms = gapMs;
+            event.data.hitch.duration_ms = gapMs;
 
-            event.hitch.frame_count = walk_stack_local(
-                event.hitch.main_thread_frames,
+            event.data.hitch.frame_count = walk_stack_local(
+                event.data.hitch.main_thread_frames,
                 IOS_MAX_STACK_DEPTH
             );
 

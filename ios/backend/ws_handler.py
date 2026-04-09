@@ -6,13 +6,16 @@ import json
 import logging
 import time
 import uuid
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 import websockets
 import websockets.exceptions
 
 from models import Session, TraceEvent
 from store import TraceStore
+
+if TYPE_CHECKING:
+    from symbolizer import Symbolizer
 
 logger = logging.getLogger(__name__)
 
@@ -22,8 +25,9 @@ BATCH_SIZE = 100
 class WSHandler:
     """Handles WebSocket connections from the iOS SDK."""
 
-    def __init__(self, store: TraceStore):
+    def __init__(self, store: TraceStore, symbolizer: Optional[Symbolizer] = None):
         self.store = store
+        self.symbolizer = symbolizer
         self.live_subscribers: set = set()
 
     async def handle_sdk_connection(self, websocket) -> None:
@@ -70,6 +74,7 @@ class WSHandler:
                 batch.append(event)
 
                 if len(batch) >= BATCH_SIZE:
+                    self._symbolize_batch(batch)
                     self.store.insert_events_batch(batch)
                     await self._forward_to_subscribers(batch)
                     batch = []
@@ -79,9 +84,28 @@ class WSHandler:
         finally:
             # Flush remaining events
             if batch:
+                self._symbolize_batch(batch)
                 self.store.insert_events_batch(batch)
                 await self._forward_to_subscribers(batch)
             logger.info("Session %s complete", session_id)
+
+    def _symbolize_batch(self, batch: list[TraceEvent]) -> None:
+        """Run symbolication on a batch of TraceEvents (in-place) if a symbolizer is configured."""
+        if not self.symbolizer:
+            return
+        # Convert TraceEvents to dicts for the symbolizer
+        event_dicts = [json.loads(e.to_json_data()) for e in batch]
+        self.symbolizer.symbolize_events(event_dicts)
+        # Write resolved symbols back to the TraceEvent frames
+        for event, event_dict in zip(batch, event_dicts):
+            if event.frames and "frames" in event_dict:
+                for frame, frame_dict in zip(event.frames, event_dict["frames"]):
+                    if frame_dict.get("symbol") and not frame.symbol:
+                        frame.symbol = frame_dict["symbol"]
+            if event.main_thread_stack and "main_thread_stack" in event_dict:
+                for frame, frame_dict in zip(event.main_thread_stack, event_dict["main_thread_stack"]):
+                    if frame_dict.get("symbol") and not frame.symbol:
+                        frame.symbol = frame_dict["symbol"]
 
     def _parse_event(self, data: dict, session_id: str) -> Optional[TraceEvent]:
         """Parse a JSON dict into a TraceEvent, returning None on failure."""
