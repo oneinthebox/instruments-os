@@ -1,0 +1,5 @@
+module InstrumentsOS {
+    header "../Core/IOSEvent.h"
+    header "../Core/IOSRingBuffer.h"
+    export *
+}
