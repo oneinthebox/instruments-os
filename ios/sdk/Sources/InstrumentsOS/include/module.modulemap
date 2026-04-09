@@ -1,5 +1,6 @@
 module InstrumentsOS {
     header "../Core/IOSEvent.h"
     header "../Core/IOSRingBuffer.h"
+    header "../Core/IOSCPUSampler.h"
     export *
 }
