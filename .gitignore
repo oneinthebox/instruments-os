@@ -1,0 +1,35 @@
+# === Node (learn/, ios/viewer/) ===
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# === Python (ios/backend/) ===
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+*.db
+.pytest_cache/
+
+# === Swift / Xcode (ios/sdk/, ios/demo/) ===
+.build/
+.swiftpm/
+DerivedData/
+*.xcuserstate
+*.xcworkspace/xcuserdata/
+xcuserdata/
+build/
+
+# === IDE / OS ===
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.suo
+*.sw?
+Thumbs.db
+
+# === Logs ===
+*.log
+npm-debug.log*
