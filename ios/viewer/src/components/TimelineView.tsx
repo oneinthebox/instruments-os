@@ -7,7 +7,7 @@ interface TimelineViewProps {
   events: TraceEvent[];
 }
 
-const TRACK_COUNT = 3; // CPU, Memory, Hitches
+const TRACK_COUNT = 5; // CPU, Memory, Hitches, GPU, Signposts
 
 export function TimelineView({ events }: TimelineViewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);

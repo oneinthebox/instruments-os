@@ -1,4 +1,4 @@
-import type { TraceEvent, CpuSampleEvent, MemoryEvent, HitchEvent } from "@/types";
+import type { TraceEvent, CpuSampleEvent, MemoryEvent, HitchEvent, GpuUtilEvent, GpuCmdBufEvent, SignpostEvent } from "@/types";
 import { TimelineState } from "./timeline";
 
 const COLORS = {
@@ -292,6 +292,185 @@ function renderHitchTrack(
   }
 }
 
+function renderGpuTrack(
+  ctx: CanvasRenderingContext2D,
+  state: TimelineState,
+  gpuUtilEvents: GpuUtilEvent[],
+  gpuCmdBufEvents: GpuCmdBufEvent[],
+  trackIndex: number,
+): void {
+  const y = renderTrackBackground(ctx, state, trackIndex);
+  renderTrackLabel(ctx, "GPU", y);
+
+  const trackAreaWidth = state.width - LABEL_WIDTH;
+  const visibleRange = state.visibleEnd - state.visibleStart;
+
+  // Render utilization as area chart
+  const visibleUtil = gpuUtilEvents
+    .filter((e) => e.timestamp_ns >= state.visibleStart && e.timestamp_ns <= state.visibleEnd)
+    .sort((a, b) => a.timestamp_ns - b.timestamp_ns);
+
+  if (visibleUtil.length > 0) {
+    const areaHeight = TRACK_HEIGHT - 20; // Leave room for command buffers below
+
+    ctx.fillStyle = COLORS.gpu;
+    ctx.globalAlpha = 0.6;
+    ctx.beginPath();
+    ctx.moveTo(LABEL_WIDTH, y + areaHeight);
+
+    for (const evt of visibleUtil) {
+      const x =
+        LABEL_WIDTH +
+        ((evt.timestamp_ns - state.visibleStart) / visibleRange) * trackAreaWidth;
+      const h = (evt.utilization_pct / 100) * (areaHeight - 4);
+      ctx.lineTo(x, y + areaHeight - h);
+    }
+
+    const lastEvt = visibleUtil[visibleUtil.length - 1];
+    const lastX =
+      LABEL_WIDTH +
+      ((lastEvt.timestamp_ns - state.visibleStart) / visibleRange) * trackAreaWidth;
+    ctx.lineTo(lastX, y + areaHeight);
+    ctx.closePath();
+    ctx.fill();
+    ctx.globalAlpha = 1.0;
+
+    // Stroke line on top
+    ctx.strokeStyle = COLORS.gpu;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    for (let i = 0; i < visibleUtil.length; i++) {
+      const evt = visibleUtil[i];
+      const x =
+        LABEL_WIDTH +
+        ((evt.timestamp_ns - state.visibleStart) / visibleRange) * trackAreaWidth;
+      const h = (evt.utilization_pct / 100) * (areaHeight - 4);
+      if (i === 0) {
+        ctx.moveTo(x, y + areaHeight - h);
+      } else {
+        ctx.lineTo(x, y + areaHeight - h);
+      }
+    }
+    ctx.stroke();
+  }
+
+  // Render command buffers as small horizontal bars below utilization
+  const cmdBarY = y + TRACK_HEIGHT - 16;
+  const cmdBarHeight = 10;
+
+  for (const evt of gpuCmdBufEvents) {
+    if (evt.gpu_start_ns > state.visibleEnd) continue;
+    if (evt.gpu_end_ns < state.visibleStart) continue;
+
+    const x1 = Math.max(
+      LABEL_WIDTH,
+      LABEL_WIDTH +
+        ((evt.gpu_start_ns - state.visibleStart) / visibleRange) * trackAreaWidth,
+    );
+    const x2 = Math.min(
+      state.width,
+      LABEL_WIDTH +
+        ((evt.gpu_end_ns - state.visibleStart) / visibleRange) * trackAreaWidth,
+    );
+    const barWidth = Math.max(2, x2 - x1);
+
+    ctx.fillStyle = COLORS.gpu;
+    ctx.globalAlpha = 0.5;
+    ctx.fillRect(x1, cmdBarY, barWidth, cmdBarHeight);
+    ctx.globalAlpha = 1.0;
+  }
+}
+
+function renderSignpostTrack(
+  ctx: CanvasRenderingContext2D,
+  state: TimelineState,
+  signpostEvents: SignpostEvent[],
+  trackIndex: number,
+): void {
+  const y = renderTrackBackground(ctx, state, trackIndex);
+  renderTrackLabel(ctx, "Signposts", y);
+
+  if (signpostEvents.length === 0) return;
+
+  const trackAreaWidth = state.width - LABEL_WIDTH;
+  const visibleRange = state.visibleEnd - state.visibleStart;
+
+  // Match begin/end pairs by signpost_id
+  const beginMap = new Map<string, SignpostEvent>();
+  const intervals: { begin: SignpostEvent; end: SignpostEvent }[] = [];
+
+  for (const evt of signpostEvents) {
+    if (evt.event === "begin") {
+      beginMap.set(evt.signpost_id, evt);
+    } else if (evt.event === "end") {
+      const begin = beginMap.get(evt.signpost_id);
+      if (begin) {
+        intervals.push({ begin, end: evt });
+        beginMap.delete(evt.signpost_id);
+      }
+    }
+  }
+
+  const barHeight = 24;
+  const barY = y + (TRACK_HEIGHT - barHeight) / 2;
+
+  // Simple lane assignment to avoid overlapping bars
+  const lanes: number[] = []; // end timestamps per lane
+  for (const interval of intervals) {
+    if (interval.begin.timestamp_ns > state.visibleEnd) continue;
+    if (interval.end.timestamp_ns < state.visibleStart) continue;
+
+    const x1 = Math.max(
+      LABEL_WIDTH,
+      LABEL_WIDTH +
+        ((interval.begin.timestamp_ns - state.visibleStart) / visibleRange) * trackAreaWidth,
+    );
+    const x2 = Math.min(
+      state.width,
+      LABEL_WIDTH +
+        ((interval.end.timestamp_ns - state.visibleStart) / visibleRange) * trackAreaWidth,
+    );
+    const barWidth = Math.max(2, x2 - x1);
+
+    // Find a free lane
+    let lane = 0;
+    for (let i = 0; i < lanes.length; i++) {
+      if (lanes[i] <= interval.begin.timestamp_ns) {
+        lane = i;
+        break;
+      }
+      lane = i + 1;
+    }
+    lanes[lane] = interval.end.timestamp_ns;
+
+    const laneOffset = lane * (barHeight + 2);
+    const currentBarY = barY + laneOffset;
+
+    // Don't render if it goes beyond the track
+    if (currentBarY + barHeight > y + TRACK_HEIGHT) continue;
+
+    ctx.fillStyle = COLORS.signpost;
+    ctx.globalAlpha = 0.7;
+    ctx.fillRect(x1, currentBarY, barWidth, barHeight);
+    ctx.globalAlpha = 1.0;
+
+    // Label inside bar
+    if (barWidth > 30) {
+      ctx.fillStyle = COLORS.textBright;
+      ctx.font = "10px 'JetBrains Mono', monospace";
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(x1, currentBarY, barWidth, barHeight);
+      ctx.clip();
+      ctx.fillText(interval.begin.name, x1 + 4, currentBarY + barHeight / 2);
+      ctx.restore();
+    }
+  }
+}
+
 export function renderTimeline(
   ctx: CanvasRenderingContext2D,
   state: TimelineState,
@@ -309,6 +488,9 @@ export function renderTimeline(
   const cpuEvents: CpuSampleEvent[] = [];
   const memEvents: MemoryEvent[] = [];
   const hitchEvents: HitchEvent[] = [];
+  const gpuUtilEvents: GpuUtilEvent[] = [];
+  const gpuCmdBufEvents: GpuCmdBufEvent[] = [];
+  const signpostEvents: SignpostEvent[] = [];
 
   for (const evt of events) {
     switch (evt.type) {
@@ -321,6 +503,15 @@ export function renderTimeline(
       case "hitch":
         hitchEvents.push(evt);
         break;
+      case "gpu_utilization":
+        gpuUtilEvents.push(evt);
+        break;
+      case "gpu_command_buffer":
+        gpuCmdBufEvents.push(evt);
+        break;
+      case "signpost":
+        signpostEvents.push(evt);
+        break;
     }
   }
 
@@ -332,6 +523,8 @@ export function renderTimeline(
   renderCpuTrack(ctx, state, cpuEvents, trackIndex++);
   renderMemoryTrack(ctx, state, memEvents, trackIndex++);
   renderHitchTrack(ctx, state, hitchEvents, trackIndex++);
+  renderGpuTrack(ctx, state, gpuUtilEvents, gpuCmdBufEvents, trackIndex++);
+  renderSignpostTrack(ctx, state, signpostEvents, trackIndex++);
 
   // Separator line between label area and track area
   ctx.strokeStyle = COLORS.border;

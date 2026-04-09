@@ -3,6 +3,7 @@ import type { TraceEvent } from "./types";
 import { fetchTimeline } from "./api/client";
 import { Toolbar } from "./components/Toolbar";
 import { TimelineView } from "./components/TimelineView";
+import { DetailPanel } from "./components/DetailPanel";
 
 export default function App() {
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -22,6 +23,7 @@ export default function App() {
       <div className="flex-1 overflow-hidden">
         <TimelineView events={events} />
       </div>
+      <DetailPanel events={events} />
     </div>
   );
 }
