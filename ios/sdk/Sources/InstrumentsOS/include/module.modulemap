@@ -2,6 +2,8 @@ module CInstrumentsOS {
     header "../Core/IOSEvent.h"
     header "../Core/IOSRingBuffer.h"
     header "../Core/IOSCPUSampler.h"
+    header "../Core/IOSMemoryTracker.h"
+    header "../Core/IOSHitchDetector.h"
     header "../Transport/IOSTransport.h"
     export *
 }
