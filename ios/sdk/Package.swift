@@ -8,14 +8,21 @@ let package = Package(
         .library(name: "InstrumentsOS", targets: ["InstrumentsOS"]),
     ],
     targets: [
+        // C / Objective-C core: ring buffer, event types, CPU sampler, transport
         .target(
-            name: "InstrumentsOS",
+            name: "CInstrumentsOS",
             path: "Sources/InstrumentsOS",
             publicHeadersPath: "include",
             cSettings: [
                 .headerSearchPath("Core"),
                 .headerSearchPath("Transport"),
             ]
+        ),
+        // Public Swift facade that re-exports the C layer
+        .target(
+            name: "InstrumentsOS",
+            dependencies: ["CInstrumentsOS"],
+            path: "Sources/InstrumentsOSSwift"
         ),
         .testTarget(
             name: "InstrumentsOSTests",
