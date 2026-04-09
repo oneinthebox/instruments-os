@@ -4,6 +4,7 @@ module CInstrumentsOS {
     header "../Core/IOSCPUSampler.h"
     header "../Core/IOSMemoryTracker.h"
     header "../Core/IOSHitchDetector.h"
+    header "../Core/IOSGPUTracker.h"
     header "../Transport/IOSTransport.h"
     export *
 }
